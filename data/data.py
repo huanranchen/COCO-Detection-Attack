@@ -1,0 +1,43 @@
+import random
+import torch
+import torchvision.transforms
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+from PIL import Image
+import os
+import torchvision.transforms as transforms
+
+
+class MyDataset(Dataset):
+    def __init__(self, path, mode):
+        self.mode = mode
+        self.files = sorted([os.path.join(path, x) for x in os.listdir(path)])
+        self.transforms = torchvision.transforms.Compose([
+            transforms.Resize((384, 384)),
+            torchvision.transforms.ToTensor(),
+        ])
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        fname = self.files[idx]
+        im = Image.open(fname)
+        im = self.transforms(im)
+        if im.shape[0] == 1:
+            return self.__getitem__(np.random.randint(0, self.__len__() - 1))
+        return im
+
+
+def get_loader(train_path='/data2/huanghao/COCO/images/train2017/',
+               mode='train',
+               batch_size=4, num_workers=4,
+               pin_memory=True):
+    set = MyDataset(path=train_path, mode=mode)
+    train_loader = DataLoader(set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+    return train_loader
+
+
+if __name__ == '__main__':
+    loader = get_loader(train_path='/data2/huanghao/COCO/images/train2017/', mode='train')
+    print(loader)
