@@ -31,7 +31,7 @@ def visualizaion(predictions, src_img):
         scores = scores[mask].cpu()
         print(f"prediction: boxes:{boxes}, labels:{labels}, scores:{scores}")
 
-        img = src_img
+        img = src_img.copy()
 
         for idx in range(len(boxes)):
             cv2.rectangle(img, (boxes[idx][0], boxes[idx][1]), (boxes[idx][2], boxes[idx][3]), (255, 0, 0))

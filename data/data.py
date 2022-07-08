@@ -11,10 +11,10 @@ import torchvision.transforms as transforms
 class MyDataset(Dataset):
     def __init__(self, path, mode):
         self.mode = mode
-        self.files = sorted([os.path.join(path, x) for x in os.listdir(path)])
+        self.files = sorted([os.path.join(path, x) for x in os.listdir(path) if x.endswith('jpg') or x.endswith('png')])
         self.transforms = torchvision.transforms.Compose([
             transforms.Resize((384, 384)),
-            torchvision.transforms.ToTensor(),
+            transforms.ToTensor(),
         ])
 
     def __len__(self):

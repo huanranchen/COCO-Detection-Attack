@@ -31,8 +31,9 @@ def scale_bbox(bx1, by1, bx2, by2, ratio=3):
     return int(cx - len_x), int(cy - len_y), int(cx + len_x), int(cy + len_y)
 
 
-def get_size_of_bbox(bx1, by1, bx2, by2, channel = 3):
+def get_size_of_bbox(bx1, by1, bx2, by2):
     return torch.Size([bx2 - bx1, by2 - by1])
+
 
 def assert_bbox(bx1, by1, bx2, by2):
     if bx2 - bx1 <= 10:
