@@ -24,7 +24,7 @@ def visualizaion(predictions, src_img):
     for x in range(len(predictions)):
         pred = predictions[x]
         scores = pred["scores"]
-        mask = scores > 0.5  # 只取scores值大于0.5的部分
+        mask = scores > 0.7  # 只取scores值大于0.5的部分
 
         boxes = pred["boxes"][mask].cpu().int().detach().numpy()  # [x1, y1, x2, y2]
         labels = pred["labels"][mask].cpu()

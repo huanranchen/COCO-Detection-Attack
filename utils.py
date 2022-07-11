@@ -41,3 +41,7 @@ def assert_bbox(bx1, by1, bx2, by2):
     if by2 - by1 <= 10:
         return False
     return True
+
+
+def clamp(x, min = 0, max = 1):
+    return torch.clamp(x, min, max)

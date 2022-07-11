@@ -5,7 +5,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from utils import scale_bbox, get_size_of_bbox, assert_bbox, tensor2cv2image
+from utils import scale_bbox, get_size_of_bbox, assert_bbox, tensor2cv2image, clamp
+from VisualizeDetection import visualizaion
+from utils import tensor2cv2image
+import torch.distributed as dist
+
+
+def reduce_mean(tensor, nprocs):
+    rt = tensor.clone()
+    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
+    rt /= nprocs
+    return rt
 
 
 def attack_detection(x: torch.tensor, model: nn.Module, attack_step=10) -> torch.tensor:
@@ -41,8 +51,8 @@ def attack_detection(x: torch.tensor, model: nn.Module, attack_step=10) -> torch
 
 def patch_attack_detection(model: nn.Module,
                            loader: DataLoader,
-                           attack_epoch=2,
-                           attack_step=1000000,
+                           attack_epoch=1000,
+                           attack_step=10000,
                            patch_size=(3, 64, 64)) -> torch.tensor:
     '''
     Not patch attack. Only detection attack
@@ -51,18 +61,18 @@ def patch_attack_detection(model: nn.Module,
     :return:
     '''
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model.eval().to(device)
     if os.path.exists('patch.pth'):
         adv_x = torch.load('patch.pth')
     else:
         adv_x = torch.clamp(torch.randn(patch_size) / 2 + 1, 0, 1)
     adv_x.requires_grad = True
-    optimizer = torch.optim.AdamW([adv_x], lr=1e-3)
+    # optimizer = torch.optim.SGD([adv_x], lr=1e-2)
     criterion = lambda x: F.mse_loss(x, torch.zeros_like(x))
 
     for epoch in range(1, attack_epoch + 1):
         total_loss = 0
         pbar = tqdm(loader)
+        loader.sampler.set_epoch(epoch)
         for step, image in enumerate(pbar):
             image = image.to(device)
             predictions = model(image)
@@ -93,6 +103,8 @@ def patch_attack_detection(model: nn.Module,
             # from VisualizeDetection import visualizaion
             # from utils import tensor2cv2image
             # visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
+            # import time
+            # time.sleep(2)
             # assert False
 
             if len(predictions) == 0:
@@ -100,14 +112,19 @@ def patch_attack_detection(model: nn.Module,
             final_scores = []
             for pred in predictions:
                 scores = pred["scores"]
-                mask = scores > 0.5
+                mask = scores > 0.3
                 scores = scores[mask]
                 final_scores.append(scores)
+            if len(final_scores) == 0:
+                continue
             scores = torch.cat(final_scores, dim=0)
             loss = criterion(scores)
-            optimizer.zero_grad()
             loss.backward()
-            optimizer.step()
+            grad = adv_x.grad.clone()
+            adv_x.requires_grad = False
+            adv_x = clamp(adv_x - 0.005 * grad.sign())
+            adv_x.requires_grad = True
+            # optimizer.step()
             total_loss += loss.item()
             if step % 10 == 0:
                 pbar.set_postfix_str(f'loss={total_loss / (step + 1)}')
@@ -116,10 +133,16 @@ def patch_attack_detection(model: nn.Module,
                     adv_x = tensor2cv2image(adv_x.detach().cpu())
                     cv2.imwrite('patch.jpg', adv_x)
                     return adv_x
+                if step % 100 == 0:
+                    torch.save(adv_x, 'patch.pth')
         print(epoch, total_loss / len(loader))
 
     torch.save(adv_x, 'patch.pth')
 
-    adv_x = tensor2cv2image(adv_x)
+    adv_x = tensor2cv2image(adv_x.detach())
     cv2.imwrite('patch.jpg', adv_x)
+
+    visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
+    import time
+    time.sleep(2)
     return adv_x

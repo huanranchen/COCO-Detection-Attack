@@ -29,8 +29,8 @@ class D2Landscape():
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def synthesize_coordinates(self,
-                               x_min=-1e-1, x_max=1e-1, x_interval=2.5e-3,
-                               y_min=-1e-1, y_max=1e-1, y_interval=2.5e-3):
+                               x_min=-8e-1, x_max=8e-1, x_interval=1e-2,
+                               y_min=-8e-1, y_max=8e-1, y_interval=1e-2):
         x = np.arange(x_min, x_max, x_interval)
         y = np.arange(y_min, y_max, y_interval)
         self.x, self.y = np.meshgrid(x, y)

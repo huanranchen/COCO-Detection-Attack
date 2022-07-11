@@ -29,12 +29,14 @@ class MyDataset(Dataset):
         return im
 
 
-def get_loader(train_path='/data2/huanghao/COCO/images/train2017/',
+def get_loader(train_path="/data2/huanghao/COCO/images/train2017/",
                mode='train',
-               batch_size=4, num_workers=4,
+               batch_size=16, num_workers=8,
                pin_memory=True):
     set = MyDataset(path=train_path, mode=mode)
-    train_loader = DataLoader(set, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
+    train_sampler = torch.utils.data.distributed.DistributedSampler(set)
+    train_loader = DataLoader(set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory,
+                              sampler=train_sampler)
     return train_loader
 
 
