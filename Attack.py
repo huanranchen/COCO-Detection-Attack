@@ -122,7 +122,8 @@ def patch_attack_detection(model: nn.Module,
             loss.backward()
             grad = adv_x.grad.clone()
             adv_x.requires_grad = False
-            adv_x = clamp(adv_x - 0.005 * grad.sign())
+            # adv_x = clamp(adv_x - 0.005 * grad.sign())
+            adv_x = clamp(adv_x - 0.005 * grad)
             adv_x.requires_grad = True
             # optimizer.step()
             total_loss += loss.item()
