@@ -9,13 +9,20 @@ import torchvision.transforms as transforms
 
 
 class MyDataset(Dataset):
-    def __init__(self, path, mode):
+    def __init__(self, path, mode, augment=False):
         self.mode = mode
         self.files = sorted([os.path.join(path, x) for x in os.listdir(path) if x.endswith('jpg') or x.endswith('png')])
-        self.transforms = torchvision.transforms.Compose([
-            transforms.Resize((384, 384)),
-            transforms.ToTensor(),
-        ])
+        if augment:
+            self.transforms = torchvision.transforms.Compose([
+                transforms.RandAugment(1, 5),
+                transforms.Resize((384, 384)),
+                transforms.ToTensor(),
+            ])
+        else:
+            self.transforms = torchvision.transforms.Compose([
+                transforms.Resize((384, 384)),
+                transforms.ToTensor(),
+            ])
 
     def __len__(self):
         return len(self.files)
@@ -32,8 +39,9 @@ class MyDataset(Dataset):
 def get_loader(train_path="/data2/huanghao/COCO/images/train2017/",
                mode='train',
                batch_size=16, num_workers=8,
-               pin_memory=True):
-    set = MyDataset(path=train_path, mode=mode)
+               pin_memory=True,
+               augment=False):
+    set = MyDataset(path=train_path, mode=mode, augment=augment)
     train_sampler = torch.utils.data.distributed.DistributedSampler(set)
     train_loader = DataLoader(set, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory,
                               sampler=train_sampler)

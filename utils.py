@@ -21,7 +21,7 @@ def image_array2tensor(image: np.array) -> torch.tensor:
     return image
 
 
-def scale_bbox(bx1, by1, bx2, by2, ratio=3):
+def scale_bbox(bx1, by1, bx2, by2, ratio=2.23):
     cx = (bx1 + bx2) / 2
     cy = (by1 + by2) / 2
     len_x = cx - bx1
