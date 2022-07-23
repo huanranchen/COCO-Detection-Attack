@@ -1,8 +1,9 @@
 import torch
+import torchvision
 from skimage.io import imread
 from VisualizeDetection import visualizaion
 from torchvision.models.detection import faster_rcnn, fasterrcnn_resnet50_fpn, ssd300_vgg16
-from Attack import attack_detection, patch_attack_detection
+from Attack import attack_detection, patch_attack_detection, SAM_patch_attack_detection
 from utils import *
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -23,11 +24,14 @@ device = torch.device("cuda", local_rank)
 from data.data import get_loader
 
 
-
 def attack():
-
-    loader = get_loader(batch_size=4)
-    #patch_attack_detection(model, loader, attack_epoch=3, attack_step=999999999)
+    model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
+    model.eval().to(device)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank,
+                                                      find_unused_parameters=True)
+    loader = get_loader(train_path='/home/nico/data/coco/train2017/', batch_size=16)
+    # patch_attack_detection(model, loader, attack_epoch=7, attack_step=999999999)
+    SAM_patch_attack_detection(model, loader, attack_epoch=3, attack_step=999999999)
 
 
 def draw_2d(dataset_path, model):
@@ -36,7 +40,7 @@ def draw_2d(dataset_path, model):
     from criterion import GetPatchLoss
     patch = torch.load('patch.pth').to(device)
     loss = GetPatchLoss(model, loader)
-    d = D2Landscape(loss, patch, mode = '2D')
+    d = D2Landscape(loss, patch, mode='2D')
     d.synthesize_coordinates()
     d.draw()
     # plt.savefig('landscape.jpg')
@@ -52,6 +56,7 @@ def draw_train_test_2d():
     draw_2d(train_path, model)
     draw_2d(test_path, model)
     plt.savefig('landscape.jpg')
+
 
 def draw_multi_model_2d():
     train_path = "/home/chenziyan/work/data/coco/train/train2017/"
@@ -69,26 +74,25 @@ def draw_multi_model_2d():
     plt.legend(['faster rcnn', 'ssd'])
     plt.savefig('landscape.jpg')
 
+
 def test_accuracy():
-    train_path = "/home/chenziyan/work/data/coco/train/train2017/"
-    model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
+    '''
+    estimate on test set
+    :return:
+    '''
+    train_path = '/home/nico/data/coco/val2017/'
+    #model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
+    model = torchvision.models.detection.ssd300_vgg16(pretrained=True).to(device)
     model.eval().to(device)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank,
                                                       find_unused_parameters=True)
-    loader = get_loader(train_path)
+    loader = get_loader(train_path, batch_size=16)
     w = TestAttackAcc(model, loader)
     patch = torch.load('patch.pth').to(device)
-    print(w.test_accuracy(patch, total_step = 100))
-
-test_accuracy()
+    print(w.test_accuracy(patch, total_step=100))
 
 
-
-
-
-
-
-
+attack()
 
 # image = imread('1.jpg')
 # x = image_array2tensor(np.array(image))
