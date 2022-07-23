@@ -52,7 +52,7 @@ class GetLoss():
                     continue
 
                 # 添加patch，生成对抗样本
-                adv_tensor_batch, patch_tmp = self.evaluator.add_universal_patch(img_numpy_batch, detector)
+                adv_tensor_batch, patch_tmp = self.evaluator.apply_universal_patch(img_numpy_batch, detector)
                 # 对对抗样本进行目标检测
                 preds, detections_with_grad = detector.detect_img_batch_get_bbox_conf(adv_tensor_batch)
                 # self.evaluator.get_patch_pos_batch(preds)

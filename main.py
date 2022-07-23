@@ -41,6 +41,7 @@ def draw_2d(dataset_path, model):
     d.draw()
     # plt.savefig('landscape.jpg')
 
+
 def draw_train_test_2d():
     model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
     model.eval().to(device)
