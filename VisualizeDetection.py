@@ -1,5 +1,5 @@
 import cv2
-
+from utils import get_datetime_str
 
 coco_labels_name = ["unlabeled", "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
                     "boat",
@@ -40,4 +40,4 @@ def visualizaion(predictions, src_img):
 
         # cv2.imshow("image", img)
         # cv2.waitKey(100000)
-        cv2.imwrite('123123.jpg', img)
+        cv2.imwrite(get_datetime_str() + '.jpg', img)

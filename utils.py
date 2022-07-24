@@ -1,6 +1,10 @@
 import cv2
 import torch
 import numpy as np
+import datetime
+
+def tensor2numpy_image(*args, **kwargs):
+    return tensor2cv2image(*args, **kwargs)
 
 
 def tensor2cv2image(x: torch.tensor) -> np.array:
@@ -45,3 +49,14 @@ def assert_bbox(bx1, by1, bx2, by2):
 
 def clamp(x, min = 0, max = 1):
     return torch.clamp(x, min, max)
+
+
+def get_datetime_str(style='dt'):
+    cur_time = datetime.datetime.now()
+    date_str = cur_time.strftime('%y_%m_%d_')
+    time_str = cur_time.strftime('%H_%M_%S')
+    if style == 'data':
+        return date_str
+    elif style == 'time':
+        return time_str
+    return date_str + time_str

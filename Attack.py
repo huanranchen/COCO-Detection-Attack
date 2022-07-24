@@ -12,6 +12,7 @@ from utils import tensor2cv2image
 import torch.distributed as dist
 from torchvision import transforms
 from torch.cuda.amp import autocast, GradScaler
+import time
 
 
 def reduce_mean(tensor):
@@ -67,7 +68,7 @@ def patch_attack_detection(model: nn.Module,
     :param model: detection model, whose output is pytorch detection style
     :return:
     '''
-    scaler = GradScaler()
+    global transform
     for s in model.modules():
         s.requires_grad_(False)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -131,24 +132,6 @@ def patch_attack_detection(model: nn.Module,
                 scores = torch.cat(final_scores, dim=0)
                 loss = criterion(scores)
                 loss.backward()
-            else:
-                raise NotImplementedError
-                with autocast():
-                    predictions = model(image)
-                    if len(predictions) == 0:
-                        continue
-                    final_scores = []
-                    for pred in predictions:
-                        scores = pred["scores"]
-                        mask = scores > 0.3
-                        scores = scores[mask]
-                        final_scores.append(scores)
-                    if len(final_scores) == 0:
-                        continue
-                    scores = torch.cat(final_scores, dim=0)
-                    loss = criterion(scores)
-                scaler.scale(loss).backward()
-                scaler.unscale_(adv_x.grad)
 
             grad = adv_x.grad.clone()
             adv_x.requires_grad = False
@@ -354,44 +337,75 @@ class AttackWithPerturbedNeuralNetwork():
     def __init__(self, model: nn.Module,
                  loader: DataLoader):
         '''
-        perturb的时候不确定！！！！！！！！！！！！！！！！！！！！！！！！！
-        先实验看看能不能用！！！！！！！！！！！！！！！！！！！！！！！！！！！！
         :param model:
         :param loader:
         '''
-        raise NotImplementedError
         self.model = model
         self.loader = loader
         self.original_model = copy.deepcopy(model)
+        self.modes = ['random', 'gradient']
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def patch_attack_detection(self,
                                attack_epoch=1000,
                                attack_step=10000,
-                               patch_size=(3, 100, 100)) -> torch.tensor:
-        '''
-        Not patch attack. Only detection attack
-        :param x:image
-        :param model: detection model, whose output is pytorch detection style
+                               patch_size=(3, 100, 100),
+                               m=0.9,
+                               use_sign=False,
+                               lr=1,
+                               aug_image=False,
+                               fp_16=False,
+                               mode='random',
+                               perturb_frequency=10,
+                               reset_frequency=1000) -> torch.tensor:
+        """
+
+        :param attack_epoch:
+        :param attack_step:
+        :param patch_size:
+        :param m:
+        :param use_sign:
+        :param lr:
+        :param aug_image:
+        :param fp_16: depreciated. Keep false please.
+        :param mode:
+        :param perturb_frequency:
+        :param reset_frequency:
         :return:
-        '''
+        """
+        assert mode in self.modes
+        if mode == 'random':
+            for s in self.model.modules():
+                s.requires_grad_(False)
+        elif mode == 'gradient':
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-6, momentum=0.9, nesterov=True)
+
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if aug_image:
+            transform = transforms.Compose([
+                transforms.RandomHorizontalFlip().to(device),
+                transforms.ColorJitter(0.1, 0.1, 0.1, 0.1).to(device),
+            ])
         if os.path.exists('patch.pth'):
             adv_x = torch.load('patch.pth')
         else:
             adv_x = torch.clamp(torch.randn(patch_size) / 2 + 1, 0, 1)
         adv_x.requires_grad = True
-        # optimizer = torch.optim.SGD([adv_x], lr=1e-2)
+        momentum = 0
         criterion = lambda x: F.mse_loss(x, torch.zeros_like(x))
 
         for epoch in range(1, attack_epoch + 1):
             total_loss = 0
-            pbar = tqdm(self.loader)
             self.loader.sampler.set_epoch(epoch)
+            pbar = tqdm(self.loader)
             for step, image in enumerate(pbar):
-                image = image.to(device)
-                predictions = self.model(image)
-                if len(predictions) == 0:
-                    continue
+                with torch.no_grad():
+                    image = image.to(device)
+                    if aug_image:
+                        image = transform(image)
+                    predictions = self.model(image)
+                    if len(predictions) == 0:
+                        continue
 
                 # interpolate the patch into images
                 for i, pred in enumerate(predictions):
@@ -410,46 +424,51 @@ class AttackWithPerturbedNeuralNetwork():
                             image[i, :, bx1:bx2, by1:by2] = now
                         except:
                             print(image.shape, now.shape)
-                # image[:, :, :patch_size[1], :patch_size[2]] = adv_x
 
-                predictions = self.model(image)
+                if not fp_16:
+                    predictions = self.model(image)
+                    if len(predictions) == 0:
+                        continue
+                    final_scores = []
+                    for pred in predictions:
+                        scores = pred["scores"]
+                        mask = scores > 0.3
+                        scores = scores[mask]
+                        final_scores.append(scores)
+                    if len(final_scores) == 0:
+                        continue
+                    scores = torch.cat(final_scores, dim=0)
+                    loss = criterion(scores)
+                    if mode == 'gradient':
+                        self.optimizer.zero_grad()
+                    loss.backward()
 
-                # from VisualizeDetection import visualizaion
-                # from utils import tensor2cv2image
-                # visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
-                # import time
-                # time.sleep(2)
-                # assert False
-
-                if len(predictions) == 0:
-                    continue
-                final_scores = []
-                for pred in predictions:
-                    scores = pred["scores"]
-                    mask = scores > 0.3
-                    scores = scores[mask]
-                    final_scores.append(scores)
-                if len(final_scores) == 0:
-                    continue
-                scores = torch.cat(final_scores, dim=0)
-                loss = criterion(scores)
-                loss.backward()
                 grad = adv_x.grad.clone()
                 adv_x.requires_grad = False
-                # adv_x = clamp(adv_x - 0.005 * grad.sign())
-                adv_x = clamp(adv_x - 0.05 * grad)
+                if use_sign:
+                    adv_x = clamp(adv_x - lr * grad.sign())
+                else:
+                    momentum = m * momentum - grad
+                    adv_x += lr * (-grad + m * momentum)
+                    adv_x = clamp(adv_x)
                 adv_x.requires_grad = True
                 # optimizer.step()
                 total_loss += loss.item()
                 if step % 10 == 0:
                     pbar.set_postfix_str(f'loss={total_loss / (step + 1)}')
+                    if step % perturb_frequency == 0:
+                        self.perturb(mode)
                     if step >= attack_step:
                         torch.save(adv_x, 'patch.pth')
                         adv_x = tensor2cv2image(adv_x.detach().cpu())
                         cv2.imwrite('patch.jpg', adv_x)
                         return adv_x
-                    if step % 100 == 0:
+                    if step % 1000 == 0:
                         torch.save(adv_x, 'patch.pth')
+                        img_x = tensor2cv2image(adv_x.detach().clone())
+                        cv2.imwrite('patch.jpg', img_x)
+                    if step % reset_frequency == 0:
+                        self.model = copy.deepcopy(self.original_model)
             print(epoch, total_loss / len(self.loader))
 
         torch.save(adv_x, 'patch.pth')
@@ -462,12 +481,19 @@ class AttackWithPerturbedNeuralNetwork():
         time.sleep(2)
         return adv_x
 
+    def __call__(self, *args, **kwargs):
+        return self.patch_attack_detection(*args, **kwargs)
+
+    def perturb(self, mode):
+        if mode == 'random':
+            self.model = self.add_gaussian_noise(self.model)
+        elif mode == 'gradient':
+            self.perturb_by_gradient_descent()
+
     @staticmethod
     def add_gaussian_noise(model: nn.Module, scale=1e-6):
         '''
         这样做到底会不会对神经网络有比较大的性能影响？？？？？？？？？？？？？？？？？
-        我其实不太清楚？？？？？？？？？？？？？？？？？？？？？？？？
-        ？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？？
         :param model:
         :param scale:
         :return:
@@ -477,7 +503,23 @@ class AttackWithPerturbedNeuralNetwork():
         return model
 
     def perturb_by_gradient_descent(self):
-        pass
+        self.optimizer.step()
+
+    def test_perturb_strength(self):
+        pbar = tqdm(self.loader)
+        for step, image in enumerate(pbar):
+            with torch.no_grad():
+                image = image.to(self.device)
+                predictions = self.model(image)
+                break
+        visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
+
+        time.sleep(2)
+        self.perturb(mode='random')
+        with torch.no_grad():
+            image = image.to(self.device)
+            predictions = self.model(image)
+        visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
 
 
 class PatchAttackDownsampleByNeuralNetWork():
