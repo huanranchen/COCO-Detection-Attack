@@ -34,8 +34,9 @@ def attack():
     # patch_attack_detection(model, loader, attack_epoch=7, attack_step=999999999)
     # SAM_patch_attack_detection(model, loader, attack_epoch=3, attack_step=999999999)
     w = AttackWithPerturbedNeuralNetwork(model, loader)
-    w.patch_attack_detection()
+    # w.patch_attack_detection()
     # w.test_perturb_strength()
+    w.adversarial_training_patch()
 
 
 def draw_2d(dataset_path, model):

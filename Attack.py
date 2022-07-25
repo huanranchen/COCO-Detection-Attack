@@ -1,5 +1,5 @@
 import copy
-import os.path
+import os
 import cv2
 import torch
 import torch.nn as nn
@@ -352,12 +352,12 @@ class AttackWithPerturbedNeuralNetwork():
                                patch_size=(3, 100, 100),
                                m=0.9,
                                use_sign=False,
-                               lr=1,
+                               lr=0.5,
                                aug_image=False,
                                fp_16=False,
                                mode='random',
                                perturb_frequency=10,
-                               reset_frequency=1000) -> torch.tensor:
+                               reset_frequency=30) -> torch.tensor:
         """
 
         :param attack_epoch:
@@ -378,7 +378,8 @@ class AttackWithPerturbedNeuralNetwork():
             for s in self.model.modules():
                 s.requires_grad_(False)
         elif mode == 'gradient':
-            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-6, momentum=0.9, nesterov=True)
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-5, momentum=0.9, nesterov=True,
+                                             maximize=True)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if aug_image:
@@ -398,7 +399,7 @@ class AttackWithPerturbedNeuralNetwork():
             total_loss = 0
             self.loader.sampler.set_epoch(epoch)
             pbar = tqdm(self.loader)
-            for step, image in enumerate(pbar):
+            for step, image in enumerate(pbar, 1):
                 with torch.no_grad():
                     image = image.to(device)
                     if aug_image:
@@ -489,9 +490,11 @@ class AttackWithPerturbedNeuralNetwork():
             self.model = self.add_gaussian_noise(self.model)
         elif mode == 'gradient':
             self.perturb_by_gradient_descent()
+        else:
+            assert False
 
     @staticmethod
-    def add_gaussian_noise(model: nn.Module, scale=1e-6):
+    def add_gaussian_noise(model: nn.Module, scale=1e-3):
         '''
         这样做到底会不会对神经网络有比较大的性能影响？？？？？？？？？？？？？？？？？
         :param model:
@@ -515,11 +518,41 @@ class AttackWithPerturbedNeuralNetwork():
         visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
 
         time.sleep(2)
-        self.perturb(mode='random')
+        for i in range(100):
+            self.perturb(mode='random')
         with torch.no_grad():
             image = image.to(self.device)
             predictions = self.model(image)
         visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
+
+    def adversarial_training_patch(self,
+                                   attack_epoch=1000,
+                                   attack_step=10000,
+                                   patch_size=(3, 100, 100),
+                                   m=0.9,
+                                   use_sign=False,
+                                   lr=0.5,
+                                   aug_image=False,
+                                   fp_16=False,
+                                   perturb_frequency=10,
+                                   ):
+        '''
+        对比实验，证明是ensemble有效而不是对抗训练有效
+        :return:
+        '''
+        mode = 'gradient'
+        reset_frequency = 99999999999
+        self.__call__(attack_epoch=attack_epoch,
+                      attack_step=attack_step,
+                      patch_size=patch_size,
+                      m=m,
+                      use_sign=use_sign,
+                      lr=lr,
+                      aug_image=aug_image,
+                      fp_16=fp_16,
+                      perturb_frequency=perturb_frequency,
+                      mode=mode,
+                      reset_frequency=reset_frequency)
 
 
 class PatchAttackDownsampleByNeuralNetWork():
