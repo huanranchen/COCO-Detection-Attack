@@ -52,6 +52,73 @@ def attack_detection(x: torch.tensor, model: nn.Module, attack_step=10) -> torch
     return adv_x.detach()
 
 
+@torch.no_grad()
+def patch_attack_detection_and_visualize(model: nn.Module,
+                                         loader: DataLoader,
+                                         attack_epoch=1000,
+                                         attack_step=10,
+                                         patch_size=(3, 100, 100),
+                                         aug_image=False,
+                                         fp_16=False) -> torch.tensor:
+    '''
+    use nesterov
+    :param x:image
+    :param model: detection model, whose output is pytorch detection style
+    :return:
+    '''
+    global transform
+    for s in model.modules():
+        s.requires_grad_(False)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if aug_image:
+        transform = transforms.Compose([
+            transforms.RandomHorizontalFlip().to(device),
+            transforms.ColorJitter(0.1, 0.1, 0.1, 0.1).to(device),
+        ])
+    if os.path.exists('patch.pth'):
+        adv_x = torch.load('patch.pth')
+    else:
+        adv_x = torch.clamp(torch.randn(patch_size) / 2 + 1, 0, 1)
+
+    for epoch in range(1, attack_epoch + 1):
+        pbar = tqdm(loader)
+        loader.sampler.set_epoch(epoch)
+        for step, image in enumerate(pbar):
+            with torch.no_grad():
+                image = image.to(device)
+                if aug_image:
+                    image = transform(image)
+                predictions = model(image)
+                if len(predictions) == 0:
+                    continue
+
+            for i, pred in enumerate(predictions):
+                scores = pred["scores"]
+                mask = scores > 0.5
+                boxes = pred["boxes"][mask]
+                for now_box_idx in range(boxes.shape[0]):
+                    now_box = boxes[now_box_idx]
+                    by1, bx1, by2, bx2 = scale_bbox(*tuple(now_box.detach().cpu().numpy().tolist()))
+                    if not assert_bbox(bx1, by1, bx2, by2):
+                        continue
+                    now = F.interpolate(adv_x.unsqueeze(0),
+                                        size=get_size_of_bbox(bx1, by1, bx2, by2),
+                                        mode='bilinear')
+                    try:
+                        image[i, :, bx1:bx2, by1:by2] = now
+                    except:
+                        print(image.shape, now.shape)
+
+            if not fp_16:
+                predictions = model(image)
+                visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
+            if step >= attack_step:
+                return
+    import time
+    time.sleep(2)
+    return
+
+
 def patch_attack_detection(model: nn.Module,
                            loader: DataLoader,
                            attack_epoch=1000,
@@ -357,7 +424,7 @@ class AttackWithPerturbedNeuralNetwork():
                                fp_16=False,
                                mode='random',
                                perturb_frequency=10,
-                               reset_frequency=30) -> torch.tensor:
+                               reset_frequency=1000) -> torch.tensor:
         """
 
         :param attack_epoch:
@@ -378,7 +445,7 @@ class AttackWithPerturbedNeuralNetwork():
             for s in self.model.modules():
                 s.requires_grad_(False)
         elif mode == 'gradient':
-            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-5, momentum=0.9, nesterov=True,
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-4, momentum=0.9, nesterov=True,
                                              maximize=True)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -494,7 +561,7 @@ class AttackWithPerturbedNeuralNetwork():
             assert False
 
     @staticmethod
-    def add_gaussian_noise(model: nn.Module, scale=1e-3):
+    def add_gaussian_noise(model: nn.Module, scale=2e-5):
         '''
         这样做到底会不会对神经网络有比较大的性能影响？？？？？？？？？？？？？？？？？
         :param model:
@@ -506,7 +573,14 @@ class AttackWithPerturbedNeuralNetwork():
         return model
 
     def perturb_by_gradient_descent(self):
+        #         last = copy.deepcopy(self.model.state_dict())
         self.optimizer.step()
+
+    #         now = self.model.state_dict()
+    #         for k in list(now.keys()):
+    #             n = now[k]
+    #             l = last[k]
+    #             print(torch.mean(torch.abs(n-l)))
 
     def test_perturb_strength(self):
         pbar = tqdm(self.loader)
@@ -518,12 +592,12 @@ class AttackWithPerturbedNeuralNetwork():
         visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
 
         time.sleep(2)
-        for i in range(100):
-            self.perturb(mode='random')
+        #         for i in range(100):
+        #             self.perturb(mode='random')
         with torch.no_grad():
             image = image.to(self.device)
             predictions = self.model(image)
-        visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
+        visualizaion([predictions[1]], tensor2cv2image(image[0].detach()))
 
     def adversarial_training_patch(self,
                                    attack_epoch=1000,
