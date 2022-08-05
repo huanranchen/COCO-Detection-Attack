@@ -5,10 +5,9 @@ from utils import *
 import torch.distributed as dist
 
 
-def reduce_mean(tensor, nprocs):
+def reduce_mean(tensor):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.ReduceOp.AVG)
-    # rt /= nprocs
     return rt
 
 
@@ -52,7 +51,7 @@ class GetPatchLoss():
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     @torch.no_grad()
-    def __call__(self, adv_x, total_step=20):
+    def __call__(self, adv_x, total_step=10):
         result = 0
         pbar = self.loader
         for step, image in enumerate(pbar):
@@ -100,7 +99,7 @@ class GetPatchLoss():
             scores = torch.cat(final_scores, dim=0)
             loss = self.criterion(scores)
             ########### attention!!!!! 222222222  4444444444 !!!!!  #######
-            result += reduce_mean(loss, 2).item()
+            result += reduce_mean(loss).item()
             if step + 1 >= total_step:
                 return result / total_step
 
