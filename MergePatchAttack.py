@@ -37,11 +37,11 @@ class LinearMergePatchAttack():
         x = np.arange(-2, 2, 0.1)
         coordinate_x, coordinate_y = np.meshgrid(x, x)
         result = []
-        for i in tqdm(range(coordinate_x.shape[0])):
-            for j in range(coordinate_x.shape[1]):
+        for i in range(coordinate_x.shape[0]):
+            for j in tqdm(range(coordinate_x.shape[1])):
                 x = coordinate_x[i, j]
                 y = coordinate_y[i, j]
-                now = x * p1 + y * p2
+                now = clamp(x * p1 + y * p2)
                 result.append(self.loss(now))
 
         result = np.array(result)

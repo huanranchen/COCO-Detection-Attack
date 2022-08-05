@@ -404,7 +404,8 @@ def SAM_patch_attack_detection(model: nn.Module,
 
 class AttackWithPerturbedNeuralNetwork():
     def __init__(self, model: nn.Module,
-                 loader: DataLoader):
+                 loader: DataLoader,
+                 black_box_model=nn.Module or None):
         '''
         :param model:
         :param loader:
@@ -412,8 +413,9 @@ class AttackWithPerturbedNeuralNetwork():
         self.model = model
         self.loader = loader
         self.original_model = copy.deepcopy(model)
-        self.modes = ['random', 'gradient']
+        self.modes = ['random', 'gradient', 'black_box_gradient']
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.black_box_model = black_box_model
 
     def patch_attack_detection(self,
                                attack_epoch=1000,
@@ -447,8 +449,10 @@ class AttackWithPerturbedNeuralNetwork():
             for s in self.model.modules():
                 s.requires_grad_(False)
         elif mode == 'gradient':
-            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-4, momentum=0.9, nesterov=True,
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-5, momentum=0.9, nesterov=True,
                                              maximize=True)
+        elif mode == 'black_box_gradient':
+            self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-5, momentum=0.9, nesterov=True)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if aug_image:
@@ -473,6 +477,7 @@ class AttackWithPerturbedNeuralNetwork():
                     image = image.to(device)
                     if aug_image:
                         image = transform(image)
+                    original_image = copy.deepcopy(image)
                     predictions = self.model(image)
                     if len(predictions) == 0:
                         continue
@@ -527,7 +532,7 @@ class AttackWithPerturbedNeuralNetwork():
                 if step % 10 == 0:
                     pbar.set_postfix_str(f'loss={total_loss / (step + 1)}')
                     if step % perturb_frequency == 0:
-                        self.perturb(mode)
+                        self.perturb(mode, original_image)
                     if step >= attack_step:
                         torch.save(adv_x, 'patch.pth')
                         adv_x = tensor2cv2image(adv_x.detach().cpu())
@@ -554,16 +559,30 @@ class AttackWithPerturbedNeuralNetwork():
     def __call__(self, *args, **kwargs):
         return self.patch_attack_detection(*args, **kwargs)
 
-    def perturb(self, mode):
+    def detector_training_loss(self, x, y) -> torch.tensor:
+        pass
+
+    def black_box_gradient_perturb(self, x: torch.tensor):
+        with torch.no_grad():
+            black_box_pre = self.black_box_model(x)
+        pre = self.model(x)
+        loss = self.detector_training_loss(pre, black_box_pre)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def perturb(self, mode: str, x=None or torch.tensor):
         if mode == 'random':
             self.model = self.add_gaussian_noise(self.model)
         elif mode == 'gradient':
             self.perturb_by_gradient_descent()
+        elif mode == 'black_box_gradient':
+            self.black_box_gradient_perturb(x)
         else:
             assert False
 
     @staticmethod
-    def add_gaussian_noise(model: nn.Module, scale=2e-5):
+    def add_gaussian_noise(model: nn.Module, scale=0):
         '''
         这样做到底会不会对神经网络有比较大的性能影响？？？？？？？？？？？？？？？？？
         :param model:
@@ -593,13 +612,13 @@ class AttackWithPerturbedNeuralNetwork():
                 break
         visualizaion([predictions[0]], tensor2cv2image(image[0].detach()))
 
-        time.sleep(2)
-        #         for i in range(100):
-        #             self.perturb(mode='random')
-        with torch.no_grad():
-            image = image.to(self.device)
-            predictions = self.model(image)
-        visualizaion([predictions[1]], tensor2cv2image(image[0].detach()))
+        # time.sleep(2)
+        # #         for i in range(100):
+        # #             self.perturb(mode='random')
+        # with torch.no_grad():
+        #     image = image.to(self.device)
+        #     predictions = self.model(image)
+        # visualizaion([predictions[1]], tensor2cv2image(image[0].detach()))
 
     def adversarial_training_patch(self,
                                    attack_epoch=1000,
@@ -761,5 +780,3 @@ class PatchAttackDownsampleByNeuralNetWork():
         import time
         time.sleep(2)
         return adv_x
-
-
