@@ -6,6 +6,11 @@ import torch
 from torch import nn
 from tqdm import tqdm
 
+def reduce_mean(tensor):
+    rt = tensor.clone()
+    dist.all_reduce(rt, op=dist.ReduceOp.AVG)
+    return rt
+
 
 def faster_rcnn_my_backbone(num_classes=91):
     import torchvision
@@ -42,13 +47,13 @@ def training_detectors(loader, model: nn.Module,
         pbar = tqdm(loader)
         total_loss = 0
         for step, (x, y) in enumerate(pbar):
-            loss = model(x, y)
+            loss = model(x, y)['loss_objectness']
             optimizer.zero_grad()
             loss.backward()
-            total_loss += loss.item()
+            total_loss += reduce_mean(loss).item()
             optimizer.step()
             if step % 10 == 0:
-                pbar.set_description_str(f'loss = {total_loss / step}')
+                pbar.set_description_str(f'loss = {total_loss / (step+1)}')
 
         torch.save(model.state_dict(), 'detector.ckpt')
 
@@ -66,6 +71,8 @@ if __name__ == '__main__':
     dist.init_process_group(backend='nccl')
 
     device = torch.device("cuda", local_rank)
-    loader = get_coco_loader(batch_size=16)
+    loader = get_coco_loader(batch_size=2)
     model = faster_rcnn_my_backbone().to(device)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
+                                                      output_device=local_rank,find_unused_parameters=True)
     training_detectors(loader, model, total_epoch=3)
