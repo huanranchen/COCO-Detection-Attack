@@ -13,7 +13,7 @@ import torch.distributed as dist
 import os
 import argparse
 from criterion import TestAttackAcc
-from models import faster_rcnn_my_backbone
+from models import faster_rcnn_my_backbone, faster_rcnn_resnet50_shakedrop
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--local_rank", default=os.getenv('LOCAL_RANK', -1), type=int)
@@ -27,21 +27,21 @@ device = torch.device("cuda", local_rank)
 from data.data import get_loader
 
 
-
-
-
 def attack():
-    model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
+    model = faster_rcnn_resnet50_shakedrop()
+    # model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
     model.eval().to(device)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank,
                                                       find_unused_parameters=True)
+    if os.path.exists('detector.ckpt'):
+        model.load_state_dict(torch.load('detector.ckpt'))
+        print('using loaded model')
     loader = get_loader(train_path='/home/nico/data/coco/train2017/', batch_size=32)
     # patch_attack_detection(model, loader, attack_epoch=7, attack_step=999999999)
     # SAM_patch_attack_detection(model, loader, attack_epoch=3, attack_step=999999999)
     w = AttackWithPerturbedNeuralNetwork(model, loader)
-    #w.patch_attack_detection()
+    # w.patch_attack_detection()
     w.test_perturb_strength()
-
 
 
 def draw_2d(dataset_path, model):
@@ -91,8 +91,8 @@ def test_accuracy():
     :return:
     '''
     train_path = '/home/nico/data/coco/val2017/'
-    #model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
-    #model = torchvision.models.detection.ssd300_vgg16(pretrained=True).to(device)
+    # model = fasterrcnn_resnet50_fpn(pretrained=True).to(device)
+    # model = torchvision.models.detection.ssd300_vgg16(pretrained=True).to(device)
     model = retinanet_resnet50_fpn(pretrained=True)
     model.eval().to(device)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank,

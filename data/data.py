@@ -60,6 +60,7 @@ class CocoDataset(Dataset):
 
     def __init__(self, root, annFile):
         """Load COCO annotation data."""
+        print('start to process coco')
         self.data_dir = Path(root)
         self.transforms = torchvision.transforms.Compose([
             transforms.ToTensor(),
@@ -76,6 +77,7 @@ class CocoDataset(Dataset):
             self.image_id_to_annos[image_id] += [anno]
 
         self.device = torch.device('cuda')
+        print('managed to process coco')
 
     def __len__(self):
         return len(self.coco_data['images'])
@@ -138,7 +140,7 @@ def get_coco_loader(batch_size=1,
         result_x = []
         result_y = []
         for x, y in batch:
-            result_x.append(x.unsqueeze(0))
+            result_x.append(x)
             result_y.append(y)
         return result_x, result_y
 
